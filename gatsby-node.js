@@ -9,64 +9,47 @@
 // const _ = require(`lodash`)
 // const path = require(`path`)
 
+var SwaggerParser = require("swagger-parser")
+
+async function parseOpenApiConfig(openApiYaml) {
+  const validation = await SwaggerParser.validate(openApiYaml)
+  console.log("api", validation)
+  return validation
+}
+
 async function onCreateNode(
   { node, actions, loadNodeContent, createNodeId, createContentDigest },
   pluginOptions
 ) {
-  console.log(node)
-  // function getType({ node, object, isArray }) {
-  //   if (pluginOptions && _.isFunction(pluginOptions.typeName)) {
-  //     return pluginOptions.typeName({ node, object, isArray })
-  //   } else if (pluginOptions && _.isString(pluginOptions.typeName)) {
-  //     return pluginOptions.typeName
-  //   } else if (node.internal.type !== `File`) {
-  //     return _.upperFirst(_.camelCase(`${node.internal.type} Yaml`))
-  //   } else if (isArray) {
-  //     return _.upperFirst(_.camelCase(`${node.name} Yaml`))
-  //   } else {
-  //     return _.upperFirst(_.camelCase(`${path.basename(node.dir)} Yaml`))
-  //   }
-  // }
-
-  // function transformObject(obj, id, type) {
-  //   const yamlNode = {
-  //     ...obj,
-  //     id,
-  //     children: [],
-  //     parent: node.id,
-  //     internal: {
-  //       contentDigest: createContentDigest(obj),
-  //       type,
-  //     },
-  //   }
-  //   createNode(yamlNode)
-  //   createParentChildLink({ parent: node, child: yamlNode })
-  // }
-
-  // const { createNode, createParentChildLink } = actions
-
-  // if (node.internal.mediaType !== `text/yaml`) {
-  //   return
-  // }
-
-  // const content = await loadNodeContent(node)
-  // const parsedContent = jsYaml.load(content)
-
-  // if (_.isArray(parsedContent)) {
-  //   parsedContent.forEach((obj, i) => {
-  //     transformObject(
-  //       obj,
-  //       obj.id ? obj.id : createNodeId(`${node.id} [${i}] >>> YAML`),
-  //       getType({ node, object: obj, isArray: true })
-  //     )
-  //   })
-  // } else if (_.isPlainObject(parsedContent)) {
-  //   transformObject(
-  //     parsedContent,
-  //     parsedContent.id ? parsedContent.id : createNodeId(`${node.id} >>> YAML`),
-  //     getType({ node, object: parsedContent, isArray: false })
-  //   )
-  // }
+  if(node.internal.type !== "ApiYaml") {
+    return
+  }
+  const { id, children, parent, internal, ...openApiConfig } = node
+  const parsedNode = await parseOpenApiConfig(openApiConfig)
+  const success = parsedNode.paths["/pets"]["get"]["responses"]["200"]
+  const { createNode, createParentChildLink, createNodeField } = actions
+  function removeGatsbyNodeFields(yamlNode) {
+    const { id: yamlNodeId, children, parent, internal, ...openApiConfig } = yamlNode
+    return openApiConfig
+  }
+  async function createOpenApiNode(yamlNode, id) {
+    const openApiConfig = removeGatsbyNodeFields(yamlNode)
+    console.log("openApiConfig", openApiConfig)
+    const openApi = await parseOpenApiConfig(openApiConfig)
+    const openApiNode = {
+      ...openApi,
+      id,
+      children: [],
+      parent: yamlNode.id,
+      internal: {
+        contentDigest: createContentDigest(openApi),
+        type: "OpenApi",
+      },
+    }
+    createNode(openApiNode)
+    createParentChildLink({ parent: yamlNode, child: openApiNode })
+  }
+  await createOpenApiNode(node, createNodeId(`${node.id} >>> OpenAPI`))
 }
 
 exports.onCreateNode = onCreateNode
