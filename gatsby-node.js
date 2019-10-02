@@ -17,25 +17,58 @@ async function parseOpenApiConfig(openApiYaml) {
   return validation
 }
 
+function removeGatsbyNodeFields(node) {
+  const {
+    id,
+    children,
+    parent,
+    internal,
+    ...restOfNode
+  } = node
+  return restOfNode
+}
+
 async function onCreateNode(
   { node, actions, loadNodeContent, createNodeId, createContentDigest },
   pluginOptions
 ) {
-  if(node.internal.type !== "ApiYaml") {
-    return
-  }
-  const { id, children, parent, internal, ...openApiConfig } = node
-  const parsedNode = await parseOpenApiConfig(openApiConfig)
-  const success = parsedNode.paths["/pets"]["get"]["responses"]["200"]
+  if(node.internal.type !== "ApiYaml") return
   const { createNode, createParentChildLink, createNodeField } = actions
-  function removeGatsbyNodeFields(yamlNode) {
-    const { id: yamlNodeId, children, parent, internal, ...openApiConfig } = yamlNode
-    return openApiConfig
-  }
   async function createOpenApiNode(yamlNode, id) {
     const openApiConfig = removeGatsbyNodeFields(yamlNode)
-    console.log("openApiConfig", openApiConfig)
-    const openApi = await parseOpenApiConfig(openApiConfig)
+    const { paths: apiPaths, ...openApi} = await parseOpenApiConfig(openApiConfig)
+
+    const openApiNode = {
+      ...openApi,
+      id,
+      children: [],
+      parent: yamlNode.id,
+      internal: {
+        contentDigest: createContentDigest(openApi),
+        type: "OpenApi",
+      },
+    }
+    await createNode(openApiNode)
+    createParentChildLink({ parent: yamlNode, child: openApiNode })
+    for(const [path, methods] of Object.entries(apiPaths)) {
+      console.log("path", path)
+      console.log("methods", methods)
+      const apiPathNode = {
+        methods,
+        path,
+        id: path,
+        children: [],
+        parent: openApiNode.id,
+        internal: {
+          contentDigest: createContentDigest({ methods, path }),
+          type: "OpenApi",
+        },
+      }
+      await createNode(apiPathNode)
+      createParentChildLink({ parent: openApiNode, child: apiPathNode })
+    }
+  }
+  async function createPathNode(path) {
     const openApiNode = {
       ...openApi,
       id,
@@ -49,6 +82,7 @@ async function onCreateNode(
     createNode(openApiNode)
     createParentChildLink({ parent: yamlNode, child: openApiNode })
   }
+
   await createOpenApiNode(node, createNodeId(`${node.id} >>> OpenAPI`))
 }
 
