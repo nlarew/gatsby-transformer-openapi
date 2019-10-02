@@ -26,46 +26,70 @@ async function onCreateNode(
   { node, actions, loadNodeContent, createNodeId, createContentDigest },
   pluginOptions
 ) {
-  if (node.internal.type !== "ApiYaml") return
+  // Get built-in actions and create custom action helpers
   const { createNode, createParentChildLink, createNodeField } = actions
-  async function createOpenApiNode(yamlNode, id) {
-    const openApiConfig = removeGatsbyNodeFields(yamlNode)
-    const { paths: apiPaths, ...openApi } = await parseOpenApiConfig(
-      openApiConfig
-    )
-
-    const openApiNode = {
-      ...openApi,
+  function constructNode({ content, parentNode, id, type }) {
+    return {
+      ...content,
       id,
       children: [],
-      parent: yamlNode.id,
+      parent: parentNode.id,
       internal: {
-        contentDigest: createContentDigest(openApi),
-        type: "OpenApi",
+        contentDigest: createContentDigest(content),
+        type,
       },
     }
+  }
+  // Filter out nodes that we don't care about
+  if (node.internal.type !== "ApiYaml") return
+
+  // Node Factories
+  async function createOpenApiNode(yamlNode) {
+    const openApiConfig = removeGatsbyNodeFields(yamlNode)
+    const { paths, ...openApi } = await parseOpenApiConfig(openApiConfig)
+    const openApiNode = constructNode({
+      id: createNodeId(`${yamlNode.id} >>> OpenAPI`),
+      content: openApi,
+      parentNode: yamlNode,
+      type: "OpenApi",
+    })
     await createNode(openApiNode)
     createParentChildLink({ parent: yamlNode, child: openApiNode })
-    for (const [path, methods] of Object.entries(apiPaths)) {
-      console.log("path", path)
-      console.log("methods", methods)
-      const apiPathNode = {
-        methods,
-        path,
-        id: path,
-        children: [],
-        parent: openApiNode.id,
-        internal: {
-          contentDigest: createContentDigest({ methods, path }),
-          type: "ApiPath",
-        },
-      }
-      await createNode(apiPathNode)
-      createParentChildLink({ parent: openApiNode, child: apiPathNode })
+
+    // Create a Path node for each path in the API spec
+    for (const [path, methods] of Object.entries(paths)) {
+      createPathNode(openApiNode, { path, methods })
     }
   }
+  async function createPathNode(openApiNode, pathConfig) {
+    const { methods, ...path } = pathConfig
+    const apiPathNode = constructNode({
+      id: createNodeId(path),
+      content: path,
+      parentNode: openApiNode,
+      type: "ApiPath",
+    })
+    await createNode(apiPathNode)
+    createParentChildLink({ parent: openApiNode, child: apiPathNode })
 
-  await createOpenApiNode(node, createNodeId(`${node.id} >>> OpenAPI`))
+    // Create a Method node for each method in the path
+    for (const [method, details] of Object.entries(methods)) {
+      createMethodNode(apiPathNode, { method, details })
+    }
+  }
+  async function createMethodNode(apiPathNode, { method, details }) {
+    const apiMethodNode = constructNode({
+      id: createNodeId(method),
+      content: { method, details },
+      parentNode: apiPathNode,
+      type: "ApiMethod",
+    })
+    await createNode(apiMethodNode)
+    createParentChildLink({ parent: apiPathNode, child: apiMethodNode })
+  }
+
+  // Do the magic
+  await createOpenApiNode(node)
 }
 
 exports.onCreateNode = onCreateNode
