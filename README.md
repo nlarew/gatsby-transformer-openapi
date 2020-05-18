@@ -1,5 +1,7 @@
 # gatsby-transformer-openapi
 
+**This project is a work in progress and is not currently suitable for use.**
+
 Converts OpenAPI 3.0 YAML definitions into to Gatsby GraphQL nodes
 
 ```graphql
